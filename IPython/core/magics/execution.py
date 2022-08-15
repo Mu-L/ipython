@@ -8,49 +8,44 @@
 import ast
 import bdb
 import builtins as builtin_mod
+import cProfile as profile
 import gc
 import itertools
+import math
 import os
+import pstats
+import re
 import shlex
 import sys
 import time
 import timeit
-import math
-import re
+from ast import Module
+from io import StringIO
+from logging import error
+from pathlib import Path
 from pdb import Restart
+from warnings import warn
 
-import cProfile as profile
-import pstats
-
-from IPython.core import oinspect
-from IPython.core import magic_arguments
-from IPython.core import page
+from IPython.core import magic_arguments, oinspect, page
 from IPython.core.error import UsageError
 from IPython.core.macro import Macro
-from IPython.core.magic import (Magics, magics_class, line_magic, cell_magic,
-                                line_cell_magic, on_off, needs_local_scope,
-                                no_var_expand)
+from IPython.core.magic import (
+    Magics,
+    cell_magic,
+    line_cell_magic,
+    line_magic,
+    magics_class,
+    needs_local_scope,
+    no_var_expand,
+    on_off,
+)
 from IPython.testing.skipdoctest import skip_doctest
-from IPython.utils.contexts import preserve_keys
 from IPython.utils.capture import capture_output
+from IPython.utils.contexts import preserve_keys
 from IPython.utils.ipstruct import Struct
 from IPython.utils.module_paths import find_mod
 from IPython.utils.path import get_py_filename, shellglob
 from IPython.utils.timing import clock, clock2
-from warnings import warn
-from logging import error
-from pathlib import Path
-from io import StringIO
-from pathlib import Path
-
-if sys.version_info > (3,8):
-    from ast import Module
-else :
-    # mock the new API, ignore second argument
-    # see https://github.com/ipython/ipython/issues/11590
-    from ast import Module as OriginalModule
-    Module = lambda nodelist, type_ignores: OriginalModule(nodelist)
-
 
 #-----------------------------------------------------------------------------
 # Magic implementation classes
@@ -97,17 +92,15 @@ class TimeitResult(object):
                 pm = u'\xb1'
             except:
                 pass
-        return (
-            u"{mean} {pm} {std} per loop (mean {pm} std. dev. of {runs} run{run_plural}, {loops} loop{loop_plural} each)"
-                .format(
-                    pm = pm,
-                    runs = self.repeat,
-                    loops = self.loops,
-                    loop_plural = "" if self.loops == 1 else "s",
-                    run_plural = "" if self.repeat == 1 else "s",
-                    mean = _format_time(self.average, self._precision),
-                    std = _format_time(self.stdev, self._precision))
-                )
+        return "{mean} {pm} {std} per loop (mean {pm} std. dev. of {runs} run{run_plural}, {loops:,} loop{loop_plural} each)".format(
+            pm=pm,
+            runs=self.repeat,
+            loops=self.loops,
+            loop_plural="" if self.loops == 1 else "s",
+            run_plural="" if self.repeat == 1 else "s",
+            mean=_format_time(self.average, self._precision),
+            std=_format_time(self.stdev, self._precision),
+        )
 
     def _repr_pretty_(self, p , cycle):
         unic = self.__str__()
@@ -367,7 +360,7 @@ class ExecutionMagics(Magics):
         if text_file:
             pfile = Path(text_file)
             pfile.touch(exist_ok=True)
-            pfile.write_text(output)
+            pfile.write_text(output, encoding="utf-8")
 
             print(
                 f"\n*** Profile printout saved to text file {repr(text_file)}.{sys_exit}"
@@ -413,7 +406,6 @@ class ExecutionMagics(Magics):
         self.shell.call_pdb = new_pdb
         print('Automatic pdb calling has been turned',on_off(new_pdb))
 
-    @skip_doctest
     @magic_arguments.magic_arguments()
     @magic_arguments.argument('--breakpoint', '-b', metavar='FILE:LINE',
         help="""
@@ -519,7 +511,7 @@ class ExecutionMagics(Magics):
         """Run the named file inside IPython as a program.
 
         Usage::
-        
+
           %run [-n -i -e -G]
                [( -t [-N<N>] | -d [-b<N>] | -p [profile options] )]
                ( -m mod | filename ) [args]
@@ -560,7 +552,7 @@ class ExecutionMagics(Magics):
         *two* back slashes (e.g. ``\\\\*``) to suppress expansions.
         To completely disable these expansions, you can use -G flag.
 
-        On Windows systems, the use of single quotes `'` when specifying 
+        On Windows systems, the use of single quotes `'` when specifying
         a file is not supported. Use double quotes `"`.
 
         Options:
@@ -1075,7 +1067,6 @@ class ExecutionMagics(Magics):
 
           In [6]: %timeit -n1 time.sleep(2)
 
-
         The times reported by %timeit will be slightly higher than those
         reported by the timeit.py script when variables are accessed. This is
         due to the fact that %timeit executes the statement in the namespace
@@ -1209,7 +1200,7 @@ class ExecutionMagics(Magics):
         The CPU and wall clock times are printed, and the value of the
         expression (if any) is returned.  Note that under Win32, system time
         is always reported as 0, since it can not be measured.
-        
+
         This function can be used both as a line and cell magic:
 
         - In line mode you can time a single-line statement (though multiple
@@ -1245,7 +1236,6 @@ class ExecutionMagics(Magics):
           hello world
           CPU times: user 0.00 s, sys: 0.00 s, total: 0.00 s
           Wall time: 0.00
-
 
         .. note::
             The time needed by Python to compile the given expression will be
@@ -1336,19 +1326,22 @@ class ExecutionMagics(Magics):
 
         wall_end = wtime()
         # Compute actual times and report
-        wall_time = wall_end-wall_st
-        cpu_user = end[0]-st[0]
-        cpu_sys = end[1]-st[1]
-        cpu_tot = cpu_user+cpu_sys
-        # On windows cpu_sys is always zero, so no new information to the next print 
-        if sys.platform != 'win32':
-            print("CPU times: user %s, sys: %s, total: %s" % \
-                (_format_time(cpu_user),_format_time(cpu_sys),_format_time(cpu_tot)))
-        print("Wall time: %s" % _format_time(wall_time))
+        wall_time = wall_end - wall_st
+        cpu_user = end[0] - st[0]
+        cpu_sys = end[1] - st[1]
+        cpu_tot = cpu_user + cpu_sys
+        # On windows cpu_sys is always zero, so only total is displayed
+        if sys.platform != "win32":
+            print(
+                f"CPU times: user {_format_time(cpu_user)}, sys: {_format_time(cpu_sys)}, total: {_format_time(cpu_tot)}"
+            )
+        else:
+            print(f"CPU times: total: {_format_time(cpu_tot)}")
+        print(f"Wall time: {_format_time(wall_time)}")
         if tc > tc_min:
-            print("Compiler : %s" % _format_time(tc))
+            print(f"Compiler : {_format_time(tc)}")
         if tp > tp_min:
-            print("Parser   : %s" % _format_time(tp))
+            print(f"Parser   : {_format_time(tp)}")
         return out
 
     @skip_doctest

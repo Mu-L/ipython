@@ -5,16 +5,17 @@
 # Distributed under the terms of the Modified BSD License.
 
 
-from collections import Counter, defaultdict, deque, OrderedDict
+from collections import Counter, defaultdict, deque, OrderedDict, UserList
 import os
+import pytest
 import types
 import string
+import sys
 import unittest
 
 import pytest
 
 from IPython.lib import pretty
-from IPython.testing.decorators import skip_without, skip_iptest_but_not_pytest
 
 from io import StringIO
 
@@ -127,7 +128,6 @@ def test_callability_checking():
         ],
     ),
 )
-@skip_iptest_but_not_pytest
 def test_sets(obj, expected_output):
     """
     Test that set and frozenset use Python 3 formatting.
@@ -136,14 +136,17 @@ def test_sets(obj, expected_output):
     assert got_output == expected_output
 
 
-@skip_without('xxlimited')
 def test_pprint_heap_allocated_type():
     """
     Test that pprint works for heap allocated types.
     """
-    import xxlimited
+    module_name = "xxlimited" if sys.version_info < (3, 10) else "xxlimited_35"
+    expected_output = (
+        "xxlimited.Null" if sys.version_info < (3, 10, 6) else "xxlimited_35.Null"
+    )
+    xxlimited = pytest.importorskip(module_name)
     output = pretty.pretty(xxlimited.Null)
-    assert output == "xxlimited.Null"
+    assert output == expected_output
 
 
 def test_pprint_nomod():
@@ -273,7 +276,7 @@ def test_unicode_repr():
     p = pretty.pretty(c)
     assert p == u
     p = pretty.pretty([c])
-    assert p == u"[%s]" % u
+    assert p == "[%s]" % u
 
 
 def test_basic_class():
@@ -292,6 +295,42 @@ def test_basic_class():
 
     assert output == "%s.MyObj" % __name__
     assert type_pprint_wrapper.called is True
+
+
+def test_collections_userlist():
+    # Create userlist with cycle
+    a = UserList()
+    a.append(a)
+
+    cases = [
+        (UserList(), "UserList([])"),
+        (
+            UserList(i for i in range(1000, 1020)),
+            "UserList([1000,\n"
+            "          1001,\n"
+            "          1002,\n"
+            "          1003,\n"
+            "          1004,\n"
+            "          1005,\n"
+            "          1006,\n"
+            "          1007,\n"
+            "          1008,\n"
+            "          1009,\n"
+            "          1010,\n"
+            "          1011,\n"
+            "          1012,\n"
+            "          1013,\n"
+            "          1014,\n"
+            "          1015,\n"
+            "          1016,\n"
+            "          1017,\n"
+            "          1018,\n"
+            "          1019])",
+        ),
+        (a, "UserList([UserList(...)])"),
+    ]
+    for obj, expected in cases:
+        assert pretty.pretty(obj) == expected
 
 
 # TODO : pytest.mark.parametrise once nose is gone.

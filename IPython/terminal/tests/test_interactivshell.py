@@ -167,11 +167,14 @@ class InteractiveShellTestCase(unittest.TestCase):
         finally:
             ip.input_transformers_post.remove(syntax_error_transformer)
 
-    def test_plain_text_only(self):
+    def test_repl_not_plain_text(self):
         ip = get_ipython()
         formatter = ip.display_formatter
         assert formatter.active_types == ['text/plain']
-        assert not formatter.ipython_display_formatter.enabled
+
+        # terminal may have arbitrary mimetype handler to open external viewer
+        # or inline images.
+        assert formatter.ipython_display_formatter.enabled
 
         class Test(object):
             def __repr__(self):
@@ -187,16 +190,30 @@ class InteractiveShellTestCase(unittest.TestCase):
 
         class Test2(Test):
             def _ipython_display_(self):
-                from IPython.display import display
-                display('<custom>')
+                from IPython.display import display, HTML
 
-        # verify that _ipython_display_ shortcut isn't called
-        obj = Test2()
-        with capture_output() as captured:
-            data, _ = formatter.format(obj)
+                display(HTML("<custom>"))
 
-        self.assertEqual(data, {'text/plain': repr(obj)})
-        assert captured.stdout == ''
+        # verify that mimehandlers are called
+        called = False
+
+        def handler(data, metadata):
+            print("Handler called")
+            nonlocal called
+            called = True
+
+        ip.display_formatter.active_types.append("text/html")
+        ip.display_formatter.formatters["text/html"].enabled = True
+        ip.mime_renderers["text/html"] = handler
+        try:
+            obj = Test()
+            display(obj)
+        finally:
+            ip.display_formatter.formatters["text/html"].enabled = False
+            del ip.mime_renderers["text/html"]
+
+        assert called == True
+
 
 def syntax_error_transformer(lines):
     """Transformer that throws SyntaxError if 'syntaxerror' is in the code."""

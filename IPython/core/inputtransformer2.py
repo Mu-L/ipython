@@ -325,7 +325,7 @@ ESC_PAREN  = '/'     # Call first argument with rest of line as arguments
 ESCAPE_SINGLES = {'!', '?', '%', ',', ';', '/'}
 ESCAPE_DOUBLES = {'!!', '??'}  # %% (cell magic) is handled separately
 
-def _make_help_call(target, esc, next_input=None):
+def _make_help_call(target, esc):
     """Prepares a pinfo(2)/psearch call from a target name and the escape
     (i.e. ? or ??)"""
     method  = 'pinfo2' if esc == '??' \
@@ -335,11 +335,8 @@ def _make_help_call(target, esc, next_input=None):
     #Prepare arguments for get_ipython().run_line_magic(magic_name, magic_args)
     t_magic_name, _, t_magic_arg_s = arg.partition(' ')
     t_magic_name = t_magic_name.lstrip(ESC_MAGIC)
-    if next_input is None:
-        return 'get_ipython().run_line_magic(%r, %r)' % (t_magic_name, t_magic_arg_s)
-    else:
-        return 'get_ipython().set_next_input(%r);get_ipython().run_line_magic(%r, %r)' % \
-           (next_input, t_magic_name, t_magic_arg_s)
+    return "get_ipython().run_line_magic(%r, %r)" % (t_magic_name, t_magic_arg_s)
+
 
 def _tr_help(content):
     """Translate lines escaped with: ?
@@ -480,13 +477,8 @@ class HelpEnd(TokenTransformBase):
         target = m.group(1)
         esc = m.group(3)
 
-        # If we're mid-command, put it back on the next prompt for the user.
-        next_input = None
-        if (not lines_before) and (not lines_after) \
-                and content.strip() != m.group(0):
-            next_input = content.rstrip('?\n')
 
-        call = _make_help_call(target, esc, next_input=next_input)
+        call = _make_help_call(target, esc)
         new_line = indent + call + '\n'
 
         return lines_before + [new_line] + lines_after
@@ -507,9 +499,12 @@ def make_tokens_by_line(lines:List[str]):
 
     #   reexported from token on 3.7+
     NEWLINE, NL = tokenize.NEWLINE, tokenize.NL  # type: ignore
-    tokens_by_line:List[List[Any]] = [[]]
-    if len(lines) > 1 and not lines[0].endswith(('\n', '\r', '\r\n', '\x0b', '\x0c')):
-        warnings.warn("`make_tokens_by_line` received a list of lines which do not have lineending markers ('\\n', '\\r', '\\r\\n', '\\x0b', '\\x0c'), behavior will be unspecified")
+    tokens_by_line: List[List[Any]] = [[]]
+    if len(lines) > 1 and not lines[0].endswith(("\n", "\r", "\r\n", "\x0b", "\x0c")):
+        warnings.warn(
+            "`make_tokens_by_line` received a list of lines which do not have lineending markers ('\\n', '\\r', '\\r\\n', '\\x0b', '\\x0c'), behavior will be unspecified",
+            stacklevel=2,
+        )
     parenlev = 0
     try:
         for token in tokenize.generate_tokens(iter(lines).__next__):
@@ -640,17 +635,17 @@ class TransformerManager:
 
         Parameters
         ----------
-        source : string
-          Python input code, which can be multiline.
+        cell : string
+            Python input code, which can be multiline.
 
         Returns
         -------
         status : str
-          One of 'complete', 'incomplete', or 'invalid' if source is not a
-          prefix of valid code.
+            One of 'complete', 'incomplete', or 'invalid' if source is not a
+            prefix of valid code.
         indent_spaces : int or None
-          The number of spaces by which to indent the next line of code. If
-          status is not 'incomplete', this is None.
+            The number of spaces by which to indent the next line of code. If
+            status is not 'incomplete', this is None.
         """
         # Remember if the lines ends in a new line.
         ends_with_newline = False
@@ -782,18 +777,12 @@ class MaybeAsyncCompile(Compile):
         super().__init__()
         self.flags |= extra_flags
 
-    def __call__(self, *args, **kwds):
-        return compile(*args, **kwds)
-
 
 class MaybeAsyncCommandCompiler(CommandCompiler):
     def __init__(self, extra_flags=0):
         self.compiler = MaybeAsyncCompile(extra_flags=extra_flags)
 
 
-if (sys.version_info.major, sys.version_info.minor) >= (3, 8):
-    _extra_flags = ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
-else:
-    _extra_flags = ast.PyCF_ONLY_AST
+_extra_flags = ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
 
 compile_command = MaybeAsyncCommandCompiler(extra_flags=_extra_flags)

@@ -2,6 +2,132 @@
  7.x Series
 ============
 
+.. _version 7.34:
+
+IPython 7.34
+============
+
+This version contains a single fix:  fix uncaught BdbQuit exceptions on ipdb
+exit :ghpull:`13668`
+
+
+.. _version 7.33:
+
+IPython 7.33
+============
+
+ - Allow IPython hooks to receive current cell ids when frontend support it. See
+   :ghpull:`13600`
+
+ - ``?`` does not trigger the insertion of a new cell anymore as most frontend
+   allow proper multiline edition. :ghpull:`13625`
+
+
+.. _version 7.32:
+
+IPython 7.32
+============
+
+
+
+Autoload magic lazily
+---------------------
+
+The ability to configure magics to be lazily loaded has been added to IPython.
+See the ``ipython --help-all`` section on ``MagicsManager.lazy_magic``.
+One can now use::
+
+    c.MagicsManager.lazy_magics = {
+              "my_magic": "slow.to.import",
+              "my_other_magic": "also.slow",
+    }
+
+And on first use of ``%my_magic``, or corresponding cell magic, or other line magic,
+the corresponding ``load_ext`` will be called just before trying to invoke the magic.
+
+Misc
+----
+
+ - Update sphinxify  for Docrepr 0.2.0  :ghpull:`13503`.
+ - Set co_name for cells run line by line (to fix debugging with Python 3.10)
+   :ghpull:`13535`
+
+
+Many thanks to all the contributors to this release. You can find all individual
+contributions to this milestone `on github
+<https://github.com/ipython/ipython/milestone/99>`__.
+
+Thanks as well to the `D. E. Shaw group <https://deshaw.com/>`__ for sponsoring
+work on IPython and related libraries.
+
+.. _version 7.31:
+
+IPython 7.31
+============
+
+IPython 7.31 brings a couple of backports and fixes from the 8.0 branches,
+it is likely one of the last releases of the 7.x series, as 8.0 will probably be released
+between this release and what would have been 7.32.
+
+Please test 8.0 beta/rc releases in addition to this release.
+
+This Releases:
+ - Backport some fixes for Python 3.10 (:ghpull:`13412`)
+ - use full-alpha transparency on dvipng rendered LaTeX (:ghpull:`13372`)
+
+Many thanks to all the contributors to this release. You can find all individual
+contributions to this milestone `on github
+<https://github.com/ipython/ipython/milestone/95>`__.
+
+Thanks as well to the `D. E. Shaw group <https://deshaw.com/>`__ for sponsoring
+work on IPython and related libraries.
+
+
+.. _version 7.30:
+
+IPython 7.30
+============
+
+IPython 7.30 fixes a couple of bugs introduce in previous releases (in
+particular with respect to path handling), and introduce a few features and
+improvements:
+
+Notably we will highlight :ghpull:`13267` "Document that ``%run`` can execute
+notebooks and ipy scripts.", which is the first commit of Fernando Pérez since
+mid 2016 (IPython 5.1). If you are new to IPython, Fernando created IPython in
+2001. The other most recent contribution of Fernando to IPython itself was
+May 2018, by reviewing and merging PRs. I want to note that Fernando is still
+active but mostly as a mentor and leader of the whole Jupyter organisation, but
+we're still happy to see him contribute code !
+
+:ghpull:`13290` "Use sphinxify (if available) in object_inspect_mime path"
+should allow richer Repr of docstrings when using jupyterlab inspector.
+
+:ghpull:`13311` make the debugger use ``ThreadPoolExecutor`` for debugger cmdloop.
+This should fix some issues/infinite loop, but let us know if you come across
+any regressions. In particular this fixes issues with `kmaork/madbg <https://github.com/kmaork/madbg>`_,
+a remote debugger for IPython.
+
+Note that this is likely the ante-penultimate release of IPython 7.x as a stable
+branch, as I hope to release IPython 8.0 as well as IPython 7.31 next
+month/early 2022.
+
+IPython 8.0 will drop support for Python 3.7, removed nose as a dependency, and
+7.x will only get critical bug fixes with 8.x becoming the new stable. This will
+not be possible without `NumFOCUS Small Development Grants
+<https://numfocus.org/programs/small-development-grants>`_ Which allowed us to
+hire `Nikita Kniazev <https://github.com/Kojoley>`_ who provide Python and C++
+help and contracting work.
+
+
+Many thanks to all the contributors to this release. You can find all individual
+contributions to this milestone `on github
+<https://github.com/ipython/ipython/milestone/94?closed=1>`__.
+
+Thanks as well to the `D. E. Shaw group <https://deshaw.com/>`__ for sponsoring
+work on IPython and related libraries.
+
+
 .. _version 7.29:
 
 IPython 7.29
@@ -115,6 +241,7 @@ such that it allows autoplay.
     the HTML allowing it. It also could get blocked by some browser extensions.
 
 Try it out!
+
 ::
 
     In [1]: from IPython.display import YouTubeVideo
@@ -595,6 +722,19 @@ Which is now also present on subclasses::
 
 
 .. _version 716:
+
+IPython 7.16.1, 7.16.2
+======================
+
+IPython 7.16.1 was release immediately after 7.16.0 to fix a conda packaging issue.
+The source is identical to 7.16.0 but the file permissions in the tar are different.
+
+IPython 7.16.2 pins jedi dependency to "<=0.17.2" which should prevent some
+issues for users still on python 3.6. This may not be sufficient as pip may
+still allow to downgrade IPython.
+
+Compatibility with Jedi > 0.17.2 was not added as this would have meant bumping
+the minimal version to >0.16.
 
 IPython 7.16
 ============
@@ -1229,7 +1369,6 @@ Miscellaneous
 IPython 7.3.0
 =============
 
-.. _whatsnew720:
 
 IPython 7.3.0 bring several bug fixes and small improvements that you will
 described bellow. 
@@ -1254,6 +1393,8 @@ Misc bug fixes and improvements:
  - Re-initialize posix aliases after a ``%reset`` :ghpull:`11528`
  - Allow the IPython command line to run ``*.ipynb`` files :ghpull:`11529`
 
+.. _whatsnew720:
+   
 IPython 7.2.0
 =============
 
@@ -1284,8 +1425,7 @@ and we're now proud to have code contributed by Chris in IPython.
 OSMagics.cd_force_quiet configuration option
 --------------------------------------------
 
-You can set this option to force the %cd magic to behave as if ``-q`` was passed:
-::
+You can set this option to force the %cd magic to behave as if ``-q`` was passed::
 
     In [1]: cd /
     /

@@ -6,8 +6,11 @@
 
 
 from inspect import signature, Signature, Parameter
+import inspect
 import os
+import pytest
 import re
+import sys
 
 from .. import oinspect
 
@@ -28,6 +31,10 @@ def setup_module():
     inspector = oinspect.Inspector()
 
 
+class SourceModuleMainTest:
+    __module__ = "__main__"
+
+
 #-----------------------------------------------------------------------------
 # Local utilities
 #-----------------------------------------------------------------------------
@@ -36,15 +43,28 @@ def setup_module():
 # defined, if any code is inserted above, the following line will need to be
 # updated.  Do NOT insert any whitespace between the next line and the function
 # definition below.
-THIS_LINE_NUMBER = 39  # Put here the actual number of this line
+THIS_LINE_NUMBER = 46  # Put here the actual number of this line
 
-from unittest import TestCase
 
-class Test(TestCase):
+def test_find_source_lines():
+    assert oinspect.find_source_lines(test_find_source_lines) == THIS_LINE_NUMBER + 3
+    assert oinspect.find_source_lines(type) is None
+    assert oinspect.find_source_lines(SourceModuleMainTest) is None
+    assert oinspect.find_source_lines(SourceModuleMainTest()) is None
 
-    def test_find_source_lines(self):
-        self.assertEqual(oinspect.find_source_lines(Test.test_find_source_lines),
-                    THIS_LINE_NUMBER+6)
+
+def test_getsource():
+    assert oinspect.getsource(type) is None
+    assert oinspect.getsource(SourceModuleMainTest) is None
+    assert oinspect.getsource(SourceModuleMainTest()) is None
+
+
+def test_inspect_getfile_raises_exception():
+    """Check oinspect.find_file/getsource/find_source_lines expectations"""
+    with pytest.raises(TypeError):
+        inspect.getfile(type)
+    with pytest.raises(OSError if sys.version_info >= (3, 10) else TypeError):
+        inspect.getfile(SourceModuleMainTest)
 
 
 # A couple of utilities to ensure these tests work the same from a source or a
@@ -59,6 +79,9 @@ def match_pyfiles(f1, f2):
 
 def test_find_file():
     match_pyfiles(oinspect.find_file(test_find_file), os.path.abspath(__file__))
+    assert oinspect.find_file(type) is None
+    assert oinspect.find_file(SourceModuleMainTest) is None
+    assert oinspect.find_file(SourceModuleMainTest()) is None
 
 
 def test_find_file_decorated1():
@@ -269,7 +292,6 @@ def test_empty_property_has_no_source():
 
 
 def test_property_sources():
-    import posixpath
     # A simple adder whose source and signature stays
     # the same across Python distributions
     def simple_add(a, b):
@@ -283,7 +305,7 @@ def test_property_sources():
 
         foo = foo.setter(lambda self, v: setattr(self, 'bar', v))
 
-        dname = property(posixpath.dirname)
+        dname = property(oinspect.getdoc)
         adder = property(simple_add)
 
     i = inspector.info(A.foo, detail_level=1)
@@ -291,7 +313,7 @@ def test_property_sources():
     assert "lambda self, v:" in i["source"]
 
     i = inspector.info(A.dname, detail_level=1)
-    assert "def dirname(p)" in i["source"]
+    assert "def getdoc(obj)" in i["source"]
 
     i = inspector.info(A.adder, detail_level=1)
     assert "def simple_add(a, b)" in i["source"]

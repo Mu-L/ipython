@@ -18,21 +18,23 @@ as otherwise it may influence later tests.
 
 import functools
 import os
-from os.path import join as pjoin
+import platform
 import random
 import string
 import sys
 import textwrap
 import unittest
+from os.path import join as pjoin
 from unittest.mock import patch
 
 import pytest
+from tempfile import TemporaryDirectory
 
+from IPython.core import debugger
 from IPython.testing import decorators as dec
 from IPython.testing import tools as tt
 from IPython.utils.io import capture_output
-from IPython.utils.tempdir import TemporaryDirectory
-from IPython.core import debugger
+
 
 def doctest_refbug():
     """Very nasty problem with references held by multiple runs of a script.
@@ -63,7 +65,7 @@ def doctest_run_builtins():
 
     In [3]: fname = tempfile.mkstemp('.py')[1]
 
-    In [3]: f = open(fname,'w')
+    In [3]: f = open(fname, 'w', encoding='utf-8')
 
     In [4]: dummy= f.write('pass\n')
 
@@ -125,6 +127,9 @@ def doctest_run_option_parser_for_posix():
     """
 
 
+doctest_run_option_parser_for_posix.__skip_doctest__ = sys.platform == "win32"
+
+
 @dec.skip_if_not_win32
 def doctest_run_option_parser_for_windows():
     r"""Test option parser in %run (Windows specific).
@@ -132,14 +137,17 @@ def doctest_run_option_parser_for_windows():
     In Windows, you can't escape ``*` `by backslash:
 
     In [1]: %run print_argv.py print\\*.py
-    ['print\\*.py']
+    ['print\\\\*.py']
 
     You can use quote to escape glob:
 
     In [2]: %run print_argv.py 'print*.py'
-    ['print*.py']
+    ["'print*.py'"]
 
     """
+
+
+doctest_run_option_parser_for_windows.__skip_doctest__ = sys.platform != "win32"
 
 
 def doctest_reset_del():
@@ -152,7 +160,7 @@ def doctest_reset_del():
 
     In [3]: a = A()
 
-    In [4]: get_ipython().reset()
+    In [4]: get_ipython().reset(); import gc; x = gc.collect(0)
     Hi
 
     In [5]: 1+1
@@ -235,6 +243,10 @@ class TestMagicRunSimple(tt.TempFileMixin):
         _ip.run_cell("t = isinstance(f(), foo)")
         assert _ip.user_ns["t"] is True
 
+    @pytest.mark.xfail(
+        platform.python_implementation() == "PyPy",
+        reason="expecting __del__ call on exit is unreliable and doesn't happen on PyPy",
+    )
     def test_obj_del(self):
         """Test that object's __del__ methods are called on exit."""
         src = ("class A(object):\n"
@@ -280,14 +292,20 @@ class TestMagicRunSimple(tt.TempFileMixin):
             _ip.magic("run %s" % empty.fname)
             assert _ip.user_ns["afunc"]() == 1
 
-    @dec.skip_win32
     def test_tclass(self):
         mydir = os.path.dirname(__file__)
-        tc = os.path.join(mydir, 'tclass')
-        src = ("%%run '%s' C-first\n"
-               "%%run '%s' C-second\n"
-               "%%run '%s' C-third\n") % (tc, tc, tc)
-        self.mktmp(src, '.ipy')
+        tc = os.path.join(mydir, "tclass")
+        src = f"""\
+import gc
+%run "{tc}" C-first
+gc.collect(0)
+%run "{tc}" C-second
+gc.collect(0)
+%run "{tc}" C-third
+gc.collect(0)
+%reset -f
+"""
+        self.mktmp(src, ".ipy")
         out = """\
 ARGV 1-: ['C-first']
 ARGV 1-: ['C-second']
@@ -375,6 +393,7 @@ tclass.py: deleting object: C-third
 
     def test_run_nb(self):
         """Test %run notebook.ipynb"""
+        pytest.importorskip("nbformat")
         from nbformat import v4, writes
         nb = v4.new_notebook(
            cells=[
@@ -391,7 +410,9 @@ tclass.py: deleting object: C-third
 
     def test_run_nb_error(self):
         """Test %run notebook.ipynb error"""
+        pytest.importorskip("nbformat")
         from nbformat import v4, writes
+
         # %run when a file name isn't provided
         pytest.raises(Exception, _ip.magic, "run")
 
@@ -424,7 +445,7 @@ class TestMagicRunWithPackage(unittest.TestCase):
         d = os.path.dirname(path)
         if not os.path.isdir(d):
             os.makedirs(d)
-        with open(path, 'w') as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(textwrap.dedent(content))
 
     def setUp(self):
@@ -507,8 +528,8 @@ class TestMagicRunWithPackage(unittest.TestCase):
 
 def test_run__name__():
     with TemporaryDirectory() as td:
-        path = pjoin(td, 'foo.py')
-        with open(path, 'w') as f:
+        path = pjoin(td, "foo.py")
+        with open(path, "w", encoding="utf-8") as f:
             f.write("q = __name__")
 
         _ip.user_ns.pop("q", None)
@@ -528,15 +549,19 @@ def test_run__name__():
 def test_run_tb():
     """Test traceback offset in %run"""
     with TemporaryDirectory() as td:
-        path = pjoin(td, 'foo.py')
-        with open(path, 'w') as f:
-            f.write('\n'.join([
-                "def foo():",
-                "    return bar()",
-                "def bar():",
-                "    raise RuntimeError('hello!')",
-                "foo()",
-            ]))
+        path = pjoin(td, "foo.py")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(
+                "\n".join(
+                    [
+                        "def foo():",
+                        "    return bar()",
+                        "def bar():",
+                        "    raise RuntimeError('hello!')",
+                        "foo()",
+                    ]
+                )
+            )
         with capture_output() as io:
             _ip.magic('run {}'.format(path))
         out = io.stdout
@@ -556,11 +581,10 @@ def test_multiprocessing_run():
     """
     with TemporaryDirectory() as td:
         mpm = sys.modules.get('__mp_main__')
-        assert mpm is not None
         sys.modules['__mp_main__'] = None
         try:
-            path = pjoin(td, 'test.py')
-            with open(path, 'w') as f:
+            path = pjoin(td, "test.py")
+            with open(path, "w", encoding="utf-8") as f:
                 f.write("import multiprocessing\nprint('hoy')")
             with capture_output() as io:
                 _ip.run_line_magic('run', path)
@@ -575,19 +599,23 @@ def test_multiprocessing_run():
         finally:
             sys.modules['__mp_main__'] = mpm
 
-@dec.knownfailureif(sys.platform == 'win32', "writes to io.stdout aren't captured on Windows")
+
 def test_script_tb():
     """Test traceback offset in `ipython script.py`"""
     with TemporaryDirectory() as td:
-        path = pjoin(td, 'foo.py')
-        with open(path, 'w') as f:
-            f.write('\n'.join([
-                "def foo():",
-                "    return bar()",
-                "def bar():",
-                "    raise RuntimeError('hello!')",
-                "foo()",
-            ]))
+        path = pjoin(td, "foo.py")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(
+                "\n".join(
+                    [
+                        "def foo():",
+                        "    return bar()",
+                        "def bar():",
+                        "    raise RuntimeError('hello!')",
+                        "foo()",
+                    ]
+                )
+            )
         out, err = tt.ipexec(path)
         assert "execfile" not in out
         assert "RuntimeError" in out

@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Tests for various magic functions.
-
-Needs to be run by nose (to make ipython session available).
-"""
+"""Tests for various magic functions."""
 
 import asyncio
+import gc
 import io
 import os
 import re
@@ -36,9 +34,11 @@ from IPython.testing import tools as tt
 from IPython.utils.io import capture_output
 from IPython.utils.process import find_cmd
 from IPython.utils.tempdir import TemporaryDirectory, TemporaryWorkingDirectory
+from IPython.utils.syspathcontext import prepended_to_syspath
 
 from .test_debugger import PdbTestInput
 
+from tempfile import NamedTemporaryFile
 
 @magic.magics_class
 class DummyMagics(magic.Magics): pass
@@ -135,10 +135,10 @@ def test_config_print_class():
         _ip.magic('config TerminalInteractiveShell')
 
     stdout = captured.stdout
-    if not re.match("TerminalInteractiveShell.* options", stdout.splitlines()[0]):
-        print(stdout)
-        raise AssertionError("1st line of stdout not like "
-                             "'TerminalInteractiveShell.* options'")
+    assert re.match(
+        "TerminalInteractiveShell.* options", stdout.splitlines()[0]
+    ), f"{stdout}\n\n1st line of stdout not like 'TerminalInteractiveShell.* options'"
+
 
 def test_rehashx():
     # clear up everything
@@ -448,7 +448,9 @@ def test_multiline_time():
     ip = get_ipython()
     ip.user_ns.pop('run', None)
 
-    ip.run_cell(dedent("""\
+    ip.run_cell(
+        dedent(
+            """\
         %%time
         a = "ho"
         b = "hey"
@@ -579,6 +581,7 @@ class TestXdel(tt.TempFileMixin):
         _ip.magic("xdel a")
 
         # Check that a's __del__ method has been called.
+        gc.collect(0)
         assert monitor == [1]
 
 def doctest_who():
@@ -745,6 +748,7 @@ def test_extension():
 
 
 def test_notebook_export_json():
+    pytest.importorskip("nbformat")
     _ip = get_ipython()
     _ip.history_manager.reset()   # Clear any existing history.
     cmds = ["a=1", "def b():\n  return a**2", "print('noël, été', b())"]
@@ -752,7 +756,7 @@ def test_notebook_export_json():
         _ip.history_manager.store_inputs(i, cmd)
     with TemporaryDirectory() as td:
         outfile = os.path.join(td, "nb.ipynb")
-        _ip.magic("notebook -e %s" % outfile)
+        _ip.magic("notebook %s" % outfile)
 
 
 class TestEnv(TestCase):
@@ -861,12 +865,18 @@ def test_file():
     """Basic %%writefile"""
     ip = get_ipython()
     with TemporaryDirectory() as td:
-        fname = os.path.join(td, 'file1')
-        ip.run_cell_magic("writefile", fname, u'\n'.join([
-            'line1',
-            'line2',
-        ]))
-        s = Path(fname).read_text()
+        fname = os.path.join(td, "file1")
+        ip.run_cell_magic(
+            "writefile",
+            fname,
+            "\n".join(
+                [
+                    "line1",
+                    "line2",
+                ]
+            ),
+        )
+        s = Path(fname).read_text(encoding="utf-8")
         assert "line1\n" in s
         assert "line2" in s
 
@@ -876,12 +886,18 @@ def test_file_single_quote():
     """Basic %%writefile with embedded single quotes"""
     ip = get_ipython()
     with TemporaryDirectory() as td:
-        fname = os.path.join(td, '\'file1\'')
-        ip.run_cell_magic("writefile", fname, u'\n'.join([
-            'line1',
-            'line2',
-        ]))
-        s = Path(fname).read_text()
+        fname = os.path.join(td, "'file1'")
+        ip.run_cell_magic(
+            "writefile",
+            fname,
+            "\n".join(
+                [
+                    "line1",
+                    "line2",
+                ]
+            ),
+        )
+        s = Path(fname).read_text(encoding="utf-8")
         assert "line1\n" in s
         assert "line2" in s
 
@@ -892,11 +908,17 @@ def test_file_double_quote():
     ip = get_ipython()
     with TemporaryDirectory() as td:
         fname = os.path.join(td, '"file1"')
-        ip.run_cell_magic("writefile", fname, u'\n'.join([
-            'line1',
-            'line2',
-        ]))
-        s = Path(fname).read_text()
+        ip.run_cell_magic(
+            "writefile",
+            fname,
+            "\n".join(
+                [
+                    "line1",
+                    "line2",
+                ]
+            ),
+        )
+        s = Path(fname).read_text(encoding="utf-8")
         assert "line1\n" in s
         assert "line2" in s
 
@@ -905,13 +927,19 @@ def test_file_var_expand():
     """%%writefile $filename"""
     ip = get_ipython()
     with TemporaryDirectory() as td:
-        fname = os.path.join(td, 'file1')
-        ip.user_ns['filename'] = fname
-        ip.run_cell_magic("writefile", '$filename', u'\n'.join([
-            'line1',
-            'line2',
-        ]))
-        s = Path(fname).read_text()
+        fname = os.path.join(td, "file1")
+        ip.user_ns["filename"] = fname
+        ip.run_cell_magic(
+            "writefile",
+            "$filename",
+            "\n".join(
+                [
+                    "line1",
+                    "line2",
+                ]
+            ),
+        )
+        s = Path(fname).read_text(encoding="utf-8")
         assert "line1\n" in s
         assert "line2" in s
 
@@ -935,16 +963,28 @@ def test_file_amend():
     """%%writefile -a amends files"""
     ip = get_ipython()
     with TemporaryDirectory() as td:
-        fname = os.path.join(td, 'file2')
-        ip.run_cell_magic("writefile", fname, u'\n'.join([
-            'line1',
-            'line2',
-        ]))
-        ip.run_cell_magic("writefile", "-a %s" % fname, u'\n'.join([
-            'line3',
-            'line4',
-        ]))
-        s = Path(fname).read_text()
+        fname = os.path.join(td, "file2")
+        ip.run_cell_magic(
+            "writefile",
+            fname,
+            "\n".join(
+                [
+                    "line1",
+                    "line2",
+                ]
+            ),
+        )
+        ip.run_cell_magic(
+            "writefile",
+            "-a %s" % fname,
+            "\n".join(
+                [
+                    "line3",
+                    "line4",
+                ]
+            ),
+        )
+        s = Path(fname).read_text(encoding="utf-8")
         assert "line1\n" in s
         assert "line3\n" in s
 
@@ -954,11 +994,17 @@ def test_file_spaces():
     ip = get_ipython()
     with TemporaryWorkingDirectory() as td:
         fname = "file name"
-        ip.run_cell_magic("file", '"%s"'%fname, u'\n'.join([
-            'line1',
-            'line2',
-        ]))
-        s = Path(fname).read_text()
+        ip.run_cell_magic(
+            "file",
+            '"%s"' % fname,
+            "\n".join(
+                [
+                    "line1",
+                    "line2",
+                ]
+            ),
+        )
+        s = Path(fname).read_text(encoding="utf-8")
         assert "line1\n" in s
         assert "line2" in s
 
@@ -970,87 +1016,98 @@ def test_script_config():
     assert "whoda" in sm.magics["cell"]
 
 
-@dec.skip_iptest_but_not_pytest
-@dec.skip_win32
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="This test does not run under Windows"
-)
 def test_script_out():
-    assert asyncio.get_event_loop().is_running() is False
-
     ip = get_ipython()
-    ip.run_cell_magic("script", "--out output sh", "echo 'hi'")
-    assert asyncio.get_event_loop().is_running() is False
-    assert ip.user_ns["output"] == "hi\n"
+    ip.run_cell_magic("script", f"--out output {sys.executable}", "print('hi')")
+    assert ip.user_ns["output"].strip() == "hi"
 
 
-@dec.skip_iptest_but_not_pytest
-@dec.skip_win32
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="This test does not run under Windows"
-)
 def test_script_err():
     ip = get_ipython()
-    assert asyncio.get_event_loop().is_running() is False
-    ip.run_cell_magic("script", "--err error sh", "echo 'hello' >&2")
-    assert asyncio.get_event_loop().is_running() is False
-    assert ip.user_ns["error"] == "hello\n"
+    ip.run_cell_magic(
+        "script",
+        f"--err error {sys.executable}",
+        "import sys; print('hello', file=sys.stderr)",
+    )
+    assert ip.user_ns["error"].strip() == "hello"
 
 
-@dec.skip_iptest_but_not_pytest
-@dec.skip_win32
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="This test does not run under Windows"
-)
 def test_script_out_err():
 
     ip = get_ipython()
     ip.run_cell_magic(
-        "script", "--out output --err error sh", "echo 'hi'\necho 'hello' >&2"
+        "script",
+        f"--out output --err error {sys.executable}",
+        "\n".join(
+            [
+                "import sys",
+                "print('hi')",
+                "print('hello', file=sys.stderr)",
+            ]
+        ),
     )
-    assert ip.user_ns["output"] == "hi\n"
-    assert ip.user_ns["error"] == "hello\n"
+    assert ip.user_ns["output"].strip() == "hi"
+    assert ip.user_ns["error"].strip() == "hello"
 
 
-@dec.skip_iptest_but_not_pytest
-@dec.skip_win32
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="This test does not run under Windows"
-)
 async def test_script_bg_out():
     ip = get_ipython()
-    ip.run_cell_magic("script", "--bg --out output sh", "echo 'hi'")
-    assert (await ip.user_ns["output"].read()) == b"hi\n"
-    ip.user_ns["output"].close()
-    asyncio.get_event_loop().stop()
+    ip.run_cell_magic("script", f"--bg --out output {sys.executable}", "print('hi')")
+    assert (await ip.user_ns["output"].read()).strip() == b"hi"
+    assert ip.user_ns["output"].at_eof()
 
 
-@dec.skip_iptest_but_not_pytest
-@dec.skip_win32
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="This test does not run under Windows"
-)
 async def test_script_bg_err():
     ip = get_ipython()
-    ip.run_cell_magic("script", "--bg --err error sh", "echo 'hello' >&2")
-    assert (await ip.user_ns["error"].read()) == b"hello\n"
-    ip.user_ns["error"].close()
+    ip.run_cell_magic(
+        "script",
+        f"--bg --err error {sys.executable}",
+        "import sys; print('hello', file=sys.stderr)",
+    )
+    assert (await ip.user_ns["error"].read()).strip() == b"hello"
+    assert ip.user_ns["error"].at_eof()
 
 
-@dec.skip_iptest_but_not_pytest
-@dec.skip_win32
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="This test does not run under Windows"
-)
 async def test_script_bg_out_err():
     ip = get_ipython()
     ip.run_cell_magic(
-        "script", "--bg --out output --err error sh", "echo 'hi'\necho 'hello' >&2"
+        "script",
+        f"--bg --out output --err error {sys.executable}",
+        "\n".join(
+            [
+                "import sys",
+                "print('hi')",
+                "print('hello', file=sys.stderr)",
+            ]
+        ),
     )
-    assert (await ip.user_ns["output"].read()) == b"hi\n"
-    assert (await ip.user_ns["error"].read()) == b"hello\n"
-    ip.user_ns["output"].close()
-    ip.user_ns["error"].close()
+    assert (await ip.user_ns["output"].read()).strip() == b"hi"
+    assert (await ip.user_ns["error"].read()).strip() == b"hello"
+    assert ip.user_ns["output"].at_eof()
+    assert ip.user_ns["error"].at_eof()
+
+
+async def test_script_bg_proc():
+    ip = get_ipython()
+    ip.run_cell_magic(
+        "script",
+        f"--bg --out output --proc p {sys.executable}",
+        "\n".join(
+            [
+                "import sys",
+                "print('hi')",
+                "print('hello', file=sys.stderr)",
+            ]
+        ),
+    )
+    p = ip.user_ns["p"]
+    await p.wait()
+    assert p.returncode == 0
+    assert (await p.stdout.read()).strip() == b"hi"
+    # not captured, so empty
+    assert (await p.stderr.read()) == b""
+    assert p.stdout.at_eof()
+    assert p.stderr.at_eof()
 
 
 def test_script_defaults():
@@ -1143,11 +1200,11 @@ def test_save():
     with TemporaryDirectory() as tmpdir:
         file = os.path.join(tmpdir, "testsave.py")
         ip.run_line_magic("save", "%s 1-10" % file)
-        content = Path(file).read_text()
+        content = Path(file).read_text(encoding="utf-8")
         assert content.count(cmds[0]) == 1
         assert "coding: utf-8" in content
         ip.run_line_magic("save", "-a %s 1-10" % file)
-        content = Path(file).read_text()
+        content = Path(file).read_text(encoding="utf-8")
         assert content.count(cmds[0]) == 2
         assert "coding: utf-8" in content
 
@@ -1162,7 +1219,7 @@ def test_save_with_no_args():
     with TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "testsave.py")
         ip.run_line_magic("save", path)
-        content = Path(path).read_text()
+        content = Path(path).read_text(encoding="utf-8")
         expected_content = dedent(
             """\
             # coding: utf-8
@@ -1222,12 +1279,9 @@ def test_edit_interactive():
     n = ip.execution_count
     ip.run_cell("def foo(): return 1", store_history=True)
 
-    try:
+    with pytest.raises(code.InteractivelyDefined) as e:
         _run_edit_test("foo")
-    except code.InteractivelyDefined as e:
-        assert e.index == n
-    else:
-        raise AssertionError("Should have raised InteractivelyDefined")
+    assert e.value.index == n
 
 
 def test_edit_cell():
@@ -1314,12 +1368,48 @@ def test_time_no_var_expand():
 # this is slow, put at the end for local testing.
 def test_timeit_arguments():
     "Test valid timeit arguments, should not cause SyntaxError (GH #1269)"
-    if sys.version_info < (3,7):
-        _ip.magic("timeit -n1 -r1 ('#')")
-    else:
-        # 3.7 optimize no-op statement like above out, and complain there is
-        # nothing in the for loop.
-        _ip.magic("timeit -n1 -r1 a=('#')")
+    _ip.magic("timeit -n1 -r1 a=('#')")
+
+
+MINIMAL_LAZY_MAGIC = """
+from IPython.core.magic import (
+    Magics,
+    magics_class,
+    line_magic,
+    cell_magic,
+)
+
+
+@magics_class
+class LazyMagics(Magics):
+    @line_magic
+    def lazy_line(self, line):
+        print("Lazy Line")
+
+    @cell_magic
+    def lazy_cell(self, line, cell):
+        print("Lazy Cell")
+
+
+def load_ipython_extension(ipython):
+    ipython.register_magics(LazyMagics)
+"""
+
+
+def test_lazy_magics():
+    with pytest.raises(UsageError):
+        ip.run_line_magic("lazy_line", "")
+
+    startdir = os.getcwd()
+
+    with TemporaryDirectory() as tmpdir:
+        with prepended_to_syspath(tmpdir):
+            ptempdir = Path(tmpdir)
+            tf = ptempdir / "lazy_magic_module.py"
+            tf.write_text(MINIMAL_LAZY_MAGIC)
+            ip.magics_manager.register_lazy("lazy_line", Path(tf.name).name[:-3])
+            with tt.AssertPrints("Lazy Line"):
+                ip.run_line_magic("lazy_line", "")
 
 
 TEST_MODULE = """
@@ -1328,31 +1418,27 @@ if __name__ == "__main__":
     print('I just ran a script')
 """
 
-
 def test_run_module_from_import_hook():
     "Test that a module can be loaded via an import hook"
     with TemporaryDirectory() as tmpdir:
-        fullpath = os.path.join(tmpdir, 'my_tmp.py')
-        Path(fullpath).write_text(TEST_MODULE)
+        fullpath = os.path.join(tmpdir, "my_tmp.py")
+        Path(fullpath).write_text(TEST_MODULE, encoding="utf-8")
 
-        class MyTempImporter(object):
-            def __init__(self):
-                pass
+        import importlib.abc
+        import importlib.util
 
-            def find_module(self, fullname, path=None):
-                if 'my_tmp' in fullname:
-                    return self
-                return None
+        class MyTempImporter(importlib.abc.MetaPathFinder, importlib.abc.SourceLoader):
+            def find_spec(self, fullname, path, target=None):
+                if fullname == "my_tmp":
+                    return importlib.util.spec_from_loader(fullname, self)
 
-            def load_module(self, name):
-                import imp
-                return imp.load_source('my_tmp', fullpath)
+            def get_filename(self, fullname):
+                assert fullname == "my_tmp"
+                return fullpath
 
-            def get_code(self, fullname):
-                return compile(Path(fullpath).read_text(), "foo", "exec")
-
-            def is_package(self, __):
-                return False
+            def get_data(self, path):
+                assert Path(path).samefile(fullpath)
+                return Path(fullpath).read_text(encoding="utf-8")
 
         sys.meta_path.insert(0, MyTempImporter())
 

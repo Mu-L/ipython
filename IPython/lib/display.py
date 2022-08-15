@@ -66,6 +66,9 @@ class Audio(DisplayObject):
     Examples
     --------
 
+    >>> import pytest
+    >>> np = pytest.importorskip("numpy")
+
     Generate a sound
 
     >>> import numpy as np
@@ -89,8 +92,8 @@ class Audio(DisplayObject):
 
     From a File:
 
-    >>> Audio('/path/to/sound.wav')  # doctest: +SKIP
-    >>> Audio(filename='/path/to/sound.ogg')  # doctest: +SKIP
+    >>> Audio('IPython/lib/tests/test.wav')  # doctest: +SKIP
+    >>> Audio(filename='IPython/lib/tests/test.wav')  # doctest: +SKIP
 
     From Bytes:
 
@@ -100,9 +103,9 @@ class Audio(DisplayObject):
     See Also
     --------
     ipywidgets.Audio
-    
-         AUdio widget with more more flexibility and options.
-    
+
+         Audio widget with more more flexibility and options.
+
     """
     _read_flags = 'rb'
 
@@ -507,27 +510,25 @@ class FileLinks(FileLink):
 
         self.recursive = recursive
 
-    def _get_display_formatter(self,
-                               dirname_output_format,
-                               fname_output_format,
-                               fp_format,
-                               fp_cleaner=None):
-        """ generate built-in formatter function
+    def _get_display_formatter(
+        self, dirname_output_format, fname_output_format, fp_format, fp_cleaner=None
+    ):
+        """generate built-in formatter function
 
-           this is used to define both the notebook and terminal built-in
-            formatters as they only differ by some wrapper text for each entry
+        this is used to define both the notebook and terminal built-in
+         formatters as they only differ by some wrapper text for each entry
 
-           dirname_output_format: string to use for formatting directory
-            names, dirname will be substituted for a single "%s" which
-            must appear in this string
-           fname_output_format: string to use for formatting file names,
-            if a single "%s" appears in the string, fname will be substituted
-            if two "%s" appear in the string, the path to fname will be
-             substituted for the first and fname will be substituted for the
-             second
-           fp_format: string to use for formatting filepaths, must contain
-            exactly two "%s" and the dirname will be substituted for the first
-            and fname will be substituted for the second
+        dirname_output_format: string to use for formatting directory
+         names, dirname will be substituted for a single "%s" which
+         must appear in this string
+        fname_output_format: string to use for formatting file names,
+         if a single "%s" appears in the string, fname will be substituted
+         if two "%s" appear in the string, the path to fname will be
+          substituted for the first and fname will be substituted for the
+          second
+        fp_format: string to use for formatting filepaths, must contain
+         exactly two "%s" and the dirname will be substituted for the first
+         and fname will be substituted for the second
         """
         def f(dirname, fnames, included_suffixes=None):
             result = []

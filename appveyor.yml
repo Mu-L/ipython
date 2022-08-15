@@ -4,35 +4,23 @@ matrix:
 
 environment:
   global:
-    COLUMNS: 120  # Appveyor web viwer window width is 130 chars
+    APPVEYOR_BUILD_WORKER_IMAGE: 'Visual Studio 2022'
+    COLUMNS: 120  # Appveyor web viewer window width is 130 chars
 
   matrix:
-
-   - PYTHON: "C:\\Python37-x64"
-     PYTHON_VERSION: "3.7.x"
-     PYTHON_ARCH: "64"
-
    - PYTHON: "C:\\Python38"
      PYTHON_VERSION: "3.8.x"
      PYTHON_ARCH: "32"
-
-   - PYTHON: "C:\\Python38-x64"
-     PYTHON_VERSION: "3.8.x"
-     PYTHON_ARCH: "64"
 
 init:
   - "ECHO %PYTHON% %PYTHON_VERSION% %PYTHON_ARCH%"
 
 install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
-  - python -m pip install --upgrade setuptools pip
-  - pip install nose coverage pytest pytest-cov pytest-trio matplotlib pandas
-  - pip install -e .[test]
-  - mkdir results
-  - cd results
+  - python -m pip install --upgrade setuptools 'pip<22'
+  - pip install pytest-cov
+  - pip install -e .[test_extra]
 test_script:
-  - iptest --coverage xml
-  - cd ..
   - pytest --color=yes -ra --cov --cov-report=xml
 on_finish:
   - curl -Os https://uploader.codecov.io/latest/windows/codecov.exe

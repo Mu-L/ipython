@@ -5,6 +5,7 @@
 # Distributed under the terms of the Modified BSD License.
 
 import os
+import pytest
 import sys
 import textwrap
 import unittest
@@ -14,7 +15,6 @@ from contextlib import contextmanager
 from traitlets.config.loader import Config
 from IPython import get_ipython
 from IPython.core import completer
-from IPython.external import decorators
 from IPython.utils.tempdir import TemporaryDirectory, TemporaryWorkingDirectory
 from IPython.utils.generics import complete_object
 from IPython.testing import decorators as dec
@@ -95,7 +95,7 @@ def test_unicode_range():
     assert len_exp == len_test, message
 
     # fail if new unicode symbols have been added. 
-    assert len_exp <= 137714, message
+    assert len_exp <= 138552, message
 
 
 @contextmanager
@@ -182,24 +182,15 @@ def test_line_split():
     check_line_split(sp, [map(str, p) for p in t])
 
 
-class NamedInstanceMetaclass(type):
-    def __getitem__(cls, item):
-        return cls.get_instance(item)
+class NamedInstanceClass:
+    instances = {}
 
-
-class NamedInstanceClass(metaclass=NamedInstanceMetaclass):
     def __init__(self, name):
-        if not hasattr(self.__class__, "instances"):
-            self.__class__.instances = {}
-        self.__class__.instances[name] = self
+        self.instances[name] = self
 
     @classmethod
     def _ipython_key_completions_(cls):
         return cls.instances.keys()
-
-    @classmethod
-    def get_instance(cls, name):
-        return cls.instances[name]
 
 
 class KeyCompletable:
@@ -273,7 +264,7 @@ class TestCompleter(unittest.TestCase):
 
         ip = get_ipython()
         # Test some random unicode symbols
-        keys = random.sample(latex_symbols.keys(), 10)
+        keys = random.sample(sorted(latex_symbols), 10)
         for k in keys:
             text, matches = ip.complete(k)
             self.assertEqual(text, k)
@@ -316,18 +307,6 @@ class TestCompleter(unittest.TestCase):
         self.assertEqual(matches, ["Ⅴ"])  # This is not a V
         self.assertEqual(matches, ["\u2164"])  # same as above but explicit.
 
-    @unittest.skip("now we have a completion for \jmath")
-    @decorators.knownfailureif(
-        sys.platform == "win32", "Fails if there is a C:\\j... path"
-    )
-    def test_no_ascii_back_completion(self):
-        ip = get_ipython()
-        with TemporaryWorkingDirectory():  # Avoid any filename completions
-            # single ascii letter that don't have yet completions
-            for letter in "jJ":
-                name, matches = ip.complete("\\" + letter)
-                self.assertEqual(matches, [])
-
     def test_delim_setting(self):
         sp = completer.CompletionSplitter()
         sp.delims = " "
@@ -357,8 +336,8 @@ class TestCompleter(unittest.TestCase):
         for s in ['""', '""" """', '"hi" "ipython"']:
             self.assertFalse(completer.has_open_quotes(s))
 
-    @decorators.knownfailureif(
-        sys.platform == "win32", "abspath completions fail on Windows"
+    @pytest.mark.xfail(
+        sys.platform == "win32", reason="abspath completions fail on Windows"
     )
     def test_abspath_file_completions(self):
         ip = get_ipython()
@@ -367,7 +346,7 @@ class TestCompleter(unittest.TestCase):
             suffixes = ["1", "2"]
             names = [prefix + s for s in suffixes]
             for n in names:
-                open(n, "w").close()
+                open(n, "w", encoding="utf-8").close()
 
             # Check simple completion
             c = ip.complete(prefix)[1]
@@ -386,7 +365,7 @@ class TestCompleter(unittest.TestCase):
             suffixes = ["1", "2"]
             names = [prefix + s for s in suffixes]
             for n in names:
-                open(n, "w").close()
+                open(n, "w", encoding="utf-8").close()
 
             # Check simple completion
             c = ip.complete(prefix)[1]
@@ -402,7 +381,7 @@ class TestCompleter(unittest.TestCase):
         ip = get_ipython()
         with TemporaryWorkingDirectory():
             name = "foo'bar"
-            open(name, "w").close()
+            open(name, "w", encoding="utf-8").close()
 
             # Don't escape Windows
             escaped = name if sys.platform == "win32" else "foo\\'bar"
@@ -440,9 +419,9 @@ class TestCompleter(unittest.TestCase):
             with provisionalcompleter():
                 ip.Completer.use_jedi = jedi_status
                 matches = c.all_completions("TestCl")
-                assert matches == ['TestClass'], jedi_status
+                assert matches == ["TestClass"], (jedi_status, matches)
                 matches = c.all_completions("TestClass.")
-                assert len(matches) > 2, jedi_status
+                assert len(matches) > 2, (jedi_status, matches)
                 matches = c.all_completions("TestClass.a")
                 assert matches == ['TestClass.a', 'TestClass.a1'], jedi_status
 
@@ -496,6 +475,7 @@ class TestCompleter(unittest.TestCase):
             "encoding" in c.signature
         ), "Signature of function was not found by completer"
 
+    @pytest.mark.xfail(reason="Known failure on jedi<=0.18.0")
     def test_deduplicate_completions(self):
         """
         Test that completions are correctly deduplicated (even if ranges are not the same)
@@ -1282,3 +1262,14 @@ class TestCompleter(unittest.TestCase):
         _, matches = ip.complete(None, "test.meth(")
         self.assertIn("meth_arg1=", matches)
         self.assertNotIn("meth2_arg1=", matches)
+
+    def test_percent_symbol_restrict_to_magic_completions(self):
+        ip = get_ipython()
+        completer = ip.Completer
+        text = "%a"
+
+        with provisionalcompleter():
+            completer.use_jedi = True
+            completions = completer.completions(text, len(text))
+            for c in completions:
+                self.assertEqual(c.text[0], "%")

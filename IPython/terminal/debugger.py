@@ -1,11 +1,8 @@
 import asyncio
 import os
 import sys
-import threading
 
 from IPython.core.debugger import Pdb
-
-
 from IPython.core.completer import IPCompleter
 from .ptutils import IPythonPTCompleter
 from .shortcuts import create_ipython_shortcuts
@@ -17,9 +14,15 @@ from prompt_toolkit.shortcuts.prompt import PromptSession
 from prompt_toolkit.enums import EditingMode
 from prompt_toolkit.formatted_text import PygmentsTokens
 from prompt_toolkit.history import InMemoryHistory, FileHistory
+from concurrent.futures import ThreadPoolExecutor
 
 from prompt_toolkit import __version__ as ptk_version
 PTK3 = ptk_version.startswith('3.')
+
+
+# we want to avoid ptk as much as possible when using subprocesses
+# as it uses cursor positioning requests, deletes color ....
+_use_simple_prompt = "IPY_TEST_SIMPLE_PROMPT" in os.environ
 
 
 class TerminalPdb(Pdb):
@@ -29,6 +32,7 @@ class TerminalPdb(Pdb):
         Pdb.__init__(self, *args, **kwargs)
         self._ptcomp = None
         self.pt_init(pt_session_options)
+        self.thread_executor = ThreadPoolExecutor(1)
 
     def pt_init(self, pt_session_options=None):
         """Initialize the prompt session and the prompt loop
@@ -69,12 +73,14 @@ class TerminalPdb(Pdb):
                 self.debugger_history = FileHistory(os.path.expanduser(str(p)))
             else:
                 self.debugger_history = InMemoryHistory()
+        else:
+            self.debugger_history = self.shell.debugger_history
 
         options = dict(
             message=(lambda: PygmentsTokens(get_prompt_tokens())),
             editing_mode=getattr(EditingMode, self.shell.editing_mode.upper()),
             key_bindings=create_ipython_shortcuts(self.shell),
-            history=self.shell.debugger_history,
+            history=self.debugger_history,
             completer=self._ptcomp,
             enable_history_search=True,
             mouse_support=self.shell.mouse_support,
@@ -86,8 +92,9 @@ class TerminalPdb(Pdb):
         if not PTK3:
             options['inputhook'] = self.shell.inputhook
         options.update(pt_session_options)
-        self.pt_loop = asyncio.new_event_loop()
-        self.pt_app = PromptSession(**options)
+        if not _use_simple_prompt:
+            self.pt_loop = asyncio.new_event_loop()
+            self.pt_app = PromptSession(**options)
 
     def cmdloop(self, intro=None):
         """Repeatedly issue a prompt, accept input, parse an initial prefix
@@ -110,7 +117,7 @@ class TerminalPdb(Pdb):
             if intro is not None:
                 self.intro = intro
             if self.intro:
-                self.stdout.write(str(self.intro)+"\n")
+                print(self.intro, file=self.stdout)
             stop = None
             while not stop:
                 if self.cmdqueue:
@@ -120,24 +127,16 @@ class TerminalPdb(Pdb):
                     self._ptcomp.ipy_completer.global_namespace = self.curframe.f_globals
 
                     # Run the prompt in a different thread.
-                    line = ''
-                    keyboard_interrupt = False
-
-                    def in_thread():
-                        nonlocal line, keyboard_interrupt
+                    if not _use_simple_prompt:
                         try:
-                            line = self.pt_app.prompt()
+                            line = self.thread_executor.submit(
+                                self.pt_app.prompt
+                            ).result()
                         except EOFError:
-                            line = 'EOF'
-                        except KeyboardInterrupt:
-                            keyboard_interrupt = True
+                            line = "EOF"
+                    else:
+                        line = input("ipdb> ")
 
-                    th = threading.Thread(target=in_thread)
-                    th.start()
-                    th.join()
-
-                    if keyboard_interrupt:
-                        raise KeyboardInterrupt
                 line = self.precmd(line)
                 stop = self.onecmd(line)
                 stop = self.postcmd(stop, line)

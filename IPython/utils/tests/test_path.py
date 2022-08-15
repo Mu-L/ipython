@@ -10,23 +10,23 @@ import sys
 import tempfile
 import unittest
 from contextlib import contextmanager
+from importlib import reload
+from os.path import abspath, join
 from unittest.mock import patch
-from os.path import join, abspath
-from imp import reload
 
-from nose import SkipTest, with_setup
 import pytest
+from tempfile import TemporaryDirectory
 
 import IPython
 from IPython import paths
 from IPython.testing import decorators as dec
-from IPython.testing.decorators import (skip_if_not_win32, skip_win32,
-                                        onlyif_unicode_paths,
-                                        skip_win32_py38,)
+from IPython.testing.decorators import (
+    onlyif_unicode_paths,
+    skip_if_not_win32,
+    skip_win32,
+)
 from IPython.testing.tools import make_tempfile
 from IPython.utils import path
-from IPython.utils.tempdir import TemporaryDirectory
-
 
 # Platform-dependent imports
 try:
@@ -40,6 +40,7 @@ except ImportError:
         import winreg as wreg
     except ImportError:
         import _winreg as wreg
+
         #Add entries that needs to be stubbed by the testing code
         (wreg.OpenKey, wreg.QueryValueEx,) = (None, None)
 
@@ -98,8 +99,17 @@ def teardown_environment():
     if hasattr(sys, 'frozen'):
         del sys.frozen
 
+
 # Build decorator that uses the setup_environment/setup_environment
-with_environment = with_setup(setup_environment, teardown_environment)
+@pytest.fixture
+def environment():
+    setup_environment()
+    yield
+    teardown_environment()
+
+
+with_environment = pytest.mark.usefixtures("environment")
+
 
 @skip_if_not_win32
 @with_environment
@@ -130,7 +140,7 @@ def test_get_home_dir_2():
     assert home_dir == unfrozen
 
 
-@skip_win32_py38
+@skip_win32
 @with_environment
 def test_get_home_dir_3():
     """get_home_dir() uses $HOME if set"""
@@ -148,7 +158,7 @@ def test_get_home_dir_4():
     # this should still succeed, but we don't care what the answer is
     home = path.get_home_dir(False)
 
-@skip_win32_py38
+@skip_win32
 @with_environment
 def test_get_home_dir_5():
     """raise HomeDirError if $HOME is specified, but not a writable dir"""
@@ -228,11 +238,11 @@ def test_get_xdg_dir_2():
 
 @with_environment
 def test_get_xdg_dir_3():
-    """test_get_xdg_dir_3, check xdg_dir not used on OS X"""
+    """test_get_xdg_dir_3, check xdg_dir not used on non-posix systems"""
     reload(path)
     path.get_home_dir = lambda : HOME_TEST_DIR
-    os.name = "posix"
-    sys.platform = "darwin"
+    os.name = "nt"
+    sys.platform = "win32"
     env.pop('IPYTHON_DIR', None)
     env.pop('IPYTHONDIR', None)
     env.pop('XDG_CONFIG_HOME', None)
@@ -285,13 +295,14 @@ class TestRaiseDeprecation(unittest.TestCase):
         ipdir = os.path.join(tmpdir, '.ipython')
         os.mkdir(ipdir, 0o555)
         try:
-            open(os.path.join(ipdir, "_foo_"), 'w').close()
+            open(os.path.join(ipdir, "_foo_"), "w", encoding="utf-8").close()
         except IOError:
             pass
         else:
             # I can still write to an unwritable dir,
             # assume I'm root and skip the test
-            raise SkipTest("I can't create directories that I can't write to")
+            pytest.skip("I can't create directories that I can't write to")
+
         with self.assertWarnsRegex(UserWarning, 'is not a writable location'):
             ipdir = paths.get_ipython_dir()
         env.pop('IPYTHON_DIR', None)
@@ -341,7 +352,7 @@ class TestShellGlob(unittest.TestCase):
         with cls.in_tempdir():
             # Create empty files
             for fname in cls.filenames:
-                open(os.path.join(td, fname), 'w').close()
+                open(os.path.join(td, fname), "w", encoding="utf-8").close()
 
     @classmethod
     def tearDownClass(cls):
@@ -381,7 +392,7 @@ class TestShellGlob(unittest.TestCase):
                 ([r'a\*', 'a*'], ['a*'] + self.filenames_start_with_a),
                 ([r'a\[012]'], ['a[012]']),
                 ]:
-            yield (self.check_match, patterns, matches)
+            self.check_match(patterns, matches)
 
     @skip_if_not_win32
     def test_match_windows(self):
@@ -392,16 +403,21 @@ class TestShellGlob(unittest.TestCase):
                 ([r'a\*', 'a*'], [r'a\*'] + self.filenames_start_with_a),
                 ([r'a\[012]'], [r'a\[012]']),
                 ]:
-            yield (self.check_match, patterns, matches)
+            self.check_match(patterns, matches)
 
 
-# TODO : pytest.mark.parametrise once nose is gone.
-def test_unescape_glob():
-    assert path.unescape_glob(r"\*\[\!\]\?") == "*[!]?"
-    assert path.unescape_glob(r"\\*") == r"\*"
-    assert path.unescape_glob(r"\\\*") == r"\*"
-    assert path.unescape_glob(r"\\a") == r"\a"
-    assert path.unescape_glob(r"\a") == r"\a"
+@pytest.mark.parametrize(
+    "globstr, unescaped_globstr",
+    [
+        (r"\*\[\!\]\?", "*[!]?"),
+        (r"\\*", r"\*"),
+        (r"\\\*", r"\*"),
+        (r"\\a", r"\a"),
+        (r"\a", r"\a"),
+    ],
+)
+def test_unescape_glob(globstr, unescaped_globstr):
+    assert path.unescape_glob(globstr) == unescaped_globstr
 
 
 @onlyif_unicode_paths
@@ -410,9 +426,9 @@ def test_ensure_dir_exists():
         d = os.path.join(td, '∂ir')
         path.ensure_dir_exists(d) # create it
         assert os.path.isdir(d)
-        path.ensure_dir_exists(d) # no-op
-        f = os.path.join(td, 'ƒile')
-        open(f, 'w').close() # touch
+        path.ensure_dir_exists(d)  # no-op
+        f = os.path.join(td, "ƒile")
+        open(f, "w", encoding="utf-8").close()  # touch
         with pytest.raises(IOError):
             path.ensure_dir_exists(f)
 
@@ -420,7 +436,7 @@ class TestLinkOrCopy(unittest.TestCase):
     def setUp(self):
         self.tempdir = TemporaryDirectory()
         self.src = self.dst("src")
-        with open(self.src, "w") as f:
+        with open(self.src, "w", encoding="utf-8") as f:
             f.write("Hello, world!")
 
     def tearDown(self):
@@ -440,8 +456,8 @@ class TestLinkOrCopy(unittest.TestCase):
         ), "%r and %r do not reference the same indoes" % (a, b)
 
     def assert_content_equal(self, a, b):
-        with open(a) as a_f:
-            with open(b) as b_f:
+        with open(a, "rb") as a_f:
+            with open(b, "rb") as b_f:
                 assert a_f.read() == b_f.read()
 
     @skip_win32
@@ -461,7 +477,7 @@ class TestLinkOrCopy(unittest.TestCase):
     @skip_win32
     def test_target_exists(self):
         dst = self.dst("target")
-        open(dst, "w").close()
+        open(dst, "w", encoding="utf-8").close()
         path.link_or_copy(self.src, dst)
         self.assert_inode_equal(self.src, dst)
 

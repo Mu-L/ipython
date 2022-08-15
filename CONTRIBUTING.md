@@ -33,7 +33,7 @@ When opening a new Issue, please take the following steps:
 
 1. Search GitHub and/or Google for your issue to avoid duplicate reports.
    Keyword searches for your error messages are most helpful.
-2. If possible, try updating to master and reproducing your issue,
+2. If possible, try updating to main and reproducing your issue,
    because we may have already fixed it.
 3. Try to include a minimal reproducible test case.
 4. Include relevant system information.  Start with the output of:
@@ -53,7 +53,7 @@ Some guidelines on contributing to IPython:
   Review and discussion can begin well before the work is complete,
   and the more discussion the better.
   The worst case is that the PR is closed.
-* Pull Requests should generally be made against master
+* Pull Requests should generally be made against main
 * Pull Requests should be tested, if feasible:
     - bugfixes should include regression tests.
     - new behavior should at least get minimal exercise.
@@ -76,20 +76,15 @@ For more detailed information, see our [GitHub Workflow](https://github.com/ipyt
 
 All the tests can be run by using
 ```shell
-iptest
+pytest
 ```
 
 All the tests for a single module (for example **test_alias**) can be run by using the fully qualified path to the module.
 ```shell
-iptest IPython.core.tests.test_alias
+pytest IPython/core/tests/test_alias.py
 ```
 
-Only a single test (for example **test_alias_lifecycle**) within a single file can be run by adding the specific test after a `:` at the end:
+Only a single test (for example **test_alias_lifecycle**) within a single file can be run by adding the specific test after a `::` at the end:
 ```shell
-iptest IPython.core.tests.test_alias:test_alias_lifecycle
-```
-
-For convenience, the full path to a file can often be used instead of the module path on unix systems. For example we can run all the tests by using
-```shell
-iptest IPython/core/tests/test_alias.py
+pytest IPython/core/tests/test_alias.py::test_alias_lifecycle
 ```

@@ -346,10 +346,15 @@ class InteractiveShellTestCase(unittest.TestCase):
             "A line magic"
 
         # Get info on line magic
-        lfind = ip._ofind('lmagic')
-        info = dict(found=True, isalias=False, ismagic=True,
-                    namespace = 'IPython internal', obj= lmagic.__wrapped__,
-                    parent = None)
+        lfind = ip._ofind("lmagic")
+        info = dict(
+            found=True,
+            isalias=False,
+            ismagic=True,
+            namespace="IPython internal",
+            obj=lmagic,
+            parent=None,
+        )
         self.assertEqual(lfind, info)
         
     def test_ofind_cell_magic(self):
@@ -360,17 +365,23 @@ class InteractiveShellTestCase(unittest.TestCase):
             "A cell magic"
 
         # Get info on cell magic
-        find = ip._ofind('cmagic')
-        info = dict(found=True, isalias=False, ismagic=True,
-                    namespace = 'IPython internal', obj= cmagic.__wrapped__,
-                    parent = None)
+        find = ip._ofind("cmagic")
+        info = dict(
+            found=True,
+            isalias=False,
+            ismagic=True,
+            namespace="IPython internal",
+            obj=cmagic,
+            parent=None,
+        )
         self.assertEqual(find, info)
 
     def test_ofind_property_with_error(self):
         class A(object):
             @property
             def foo(self):
-                raise NotImplementedError()
+                raise NotImplementedError()  # pragma: no cover
+
         a = A()
 
         found = ip._ofind('a.foo', [('locals', locals())])
@@ -382,7 +393,7 @@ class InteractiveShellTestCase(unittest.TestCase):
         class A(object):
             @property
             def foo(self):
-                raise NotImplementedError()
+                raise NotImplementedError()  # pragma: no cover
 
         a = A()
         a.a = A()
@@ -475,12 +486,12 @@ class InteractiveShellTestCase(unittest.TestCase):
     def test_mktempfile(self):
         filename = ip.mktempfile()
         # Check that we can open the file again on Windows
-        with open(filename, 'w') as f:
-            f.write('abc')
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write("abc")
 
-        filename = ip.mktempfile(data='blah')
-        with open(filename, 'r') as f:
-            self.assertEqual(f.read(), 'blah')
+        filename = ip.mktempfile(data="blah")
+        with open(filename, "r", encoding="utf-8") as f:
+            self.assertEqual(f.read(), "blah")
 
     def test_new_main_mod(self):
         # Smoketest to check that this accepts a unicode module name
@@ -535,7 +546,9 @@ class TestSafeExecfileNonAsciiPath(unittest.TestCase):
         self.BASETESTDIR = tempfile.mkdtemp()
         self.TESTDIR = join(self.BASETESTDIR, u"åäö")
         os.mkdir(self.TESTDIR)
-        with open(join(self.TESTDIR, u"åäötestscript.py"), "w") as sfile:
+        with open(
+            join(self.TESTDIR, "åäötestscript.py"), "w", encoding="utf-8"
+        ) as sfile:
             sfile.write("pass\n")
         self.oldpath = os.getcwd()
         os.chdir(self.TESTDIR)
@@ -573,9 +586,9 @@ class ExitCodeChecks(tt.TempFileMixin):
         self.assertEqual(ip.user_ns['_exit_code'], -signal.SIGALRM)
     
     @onlyif_cmds_exist("csh")
-    def test_exit_code_signal_csh(self):
-        SHELL = os.environ.get('SHELL', None)
-        os.environ['SHELL'] = find_cmd("csh")
+    def test_exit_code_signal_csh(self):  # pragma: no cover
+        SHELL = os.environ.get("SHELL", None)
+        os.environ["SHELL"] = find_cmd("csh")
         try:
             self.test_exit_code_signal()
         finally:
@@ -603,7 +616,7 @@ class TestSystemRaw(ExitCodeChecks):
     def test_control_c(self, *mocks):
         try:
             self.system("sleep 1 # wont happen")
-        except KeyboardInterrupt:
+        except KeyboardInterrupt:  # pragma: no cove
             self.fail(
                 "system call should intercept "
                 "keyboard interrupt from subprocess.call"
@@ -611,7 +624,7 @@ class TestSystemRaw(ExitCodeChecks):
         self.assertEqual(ip.user_ns["_exit_code"], -signal.SIGINT)
 
     def test_magic_warnings(self):
-        for magic_cmd in ("ls", "pip", "conda", "cd"):
+        for magic_cmd in ("pip", "conda", "cd"):
             with self.assertWarnsRegex(Warning, "You executed the system command"):
                 ip.system_raw(magic_cmd)
 
@@ -667,16 +680,20 @@ class TestAstTransform(unittest.TestCase):
     
     def tearDown(self):
         ip.ast_transformers.remove(self.negator)
-    
+
+    def test_non_int_const(self):
+        with tt.AssertPrints("hello"):
+            ip.run_cell('print("hello")')
+
     def test_run_cell(self):
-        with tt.AssertPrints('-34'):
-            ip.run_cell('print (12 + 22)')
-        
+        with tt.AssertPrints("-34"):
+            ip.run_cell("print(12 + 22)")
+
         # A named reference to a number shouldn't be transformed.
-        ip.user_ns['n'] = 55
-        with tt.AssertNotPrints('-55'):
-            ip.run_cell('print (n)')
-    
+        ip.user_ns["n"] = 55
+        with tt.AssertNotPrints("-55"):
+            ip.run_cell("print(n)")
+
     def test_timeit(self):
         called = set()
         def f(x):
@@ -784,7 +801,11 @@ class TestAstTransform2(unittest.TestCase):
         # This shouldn't throw an error
         ip.run_cell("o = 2.0")
         self.assertEqual(ip.user_ns['o'], 2.0)
-    
+
+    def test_run_cell_non_int(self):
+        ip.run_cell("n = 'a'")
+        assert self.calls == []
+
     def test_timeit(self):
         called = set()
         def f(x):
@@ -803,14 +824,9 @@ class TestAstTransform2(unittest.TestCase):
 class ErrorTransformer(ast.NodeTransformer):
     """Throws an error when it sees a number."""
 
-    # for Python 3.7 and earlier
-    def visit_Num(self, node):
-        raise ValueError("test")
-
-    # for Python 3.8+
     def visit_Constant(self, node):
         if isinstance(node.value, int):
-            return self.visit_Num(node)
+            raise ValueError("test")
         return node
 
 
@@ -833,10 +849,6 @@ class StringRejector(ast.NodeTransformer):
     not be executed by throwing an InputRejected.
     """
     
-    #for python 3.7 and earlier
-    def visit_Str(self, node):
-        raise InputRejected("test")
-
     # 3.8 only
     def visit_Constant(self, node):
         if isinstance(node.value, str):
@@ -1039,13 +1051,29 @@ def test_custom_exc_count():
 
 
 def test_run_cell_async():
-    loop = asyncio.get_event_loop()
     ip.run_cell("import asyncio")
     coro = ip.run_cell_async("await asyncio.sleep(0.01)\n5")
     assert asyncio.iscoroutine(coro)
+    loop = asyncio.new_event_loop()
     result = loop.run_until_complete(coro)
     assert isinstance(result, interactiveshell.ExecutionResult)
     assert result.result == 5
+
+
+def test_run_cell_await():
+    ip.run_cell("import asyncio")
+    result = ip.run_cell("await asyncio.sleep(0.01); 10")
+    assert ip.user_ns["_"] == 10
+
+
+def test_run_cell_asyncio_run():
+    ip.run_cell("import asyncio")
+    result = ip.run_cell("await asyncio.sleep(0.01); 1")
+    assert ip.user_ns["_"] == 1
+    result = ip.run_cell("asyncio.run(asyncio.sleep(0.01)); 2")
+    assert ip.user_ns["_"] == 2
+    result = ip.run_cell("await asyncio.sleep(0.01); 3")
+    assert ip.user_ns["_"] == 3
 
 
 def test_should_run_async():
